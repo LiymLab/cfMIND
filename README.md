@@ -3,18 +3,17 @@ cfMIND  (<em><u>cf</u></em>DNA <em><u>M</u></em>ethylation signals of <em><u>IN<
 
 ---
 
+
 ## 🌟Installation 
 cfMIND requires both **Python** and **R** environments. For stable performance, we recommend the following versions:    
 
 - **Python**: 3.7.12
 - **R**: 4.3.2  
 
-.......
-
 You can set up your conda environment and install the required R packages as follows:
 
 ```bash
-git clone https://github.com/LiymLab/cfMIND.git
+git clone ***.git
 chmod a+x -R ./cfMIND
 cd cfMIND
 conda env create -f environment.yml
@@ -29,7 +28,7 @@ Rscript install_R_packages.R
 To get started with **cfMIND**, please prepare the following files:
 
 1. **BAM files**
-   - Sorted by genomic coordinates and indexed (with`.bai` files).
+   - Sorted by genomic coordinates and indexed (with`.bai`).
 2. **CpG_OB/T files** corresponding to each BAM file:
    - **CpG_OB\***: methylation information for CpGs on the *original bottom strand (OB)*.
    
@@ -40,7 +39,7 @@ To get started with **cfMIND**, please prepare the following files:
 ```bash
 bismark_methylation_extractor sample.nsorted.bam -o /path/to/output/ --bedGraph --counts --no_overlap --genome_folder hg38
 ```
-Once the installation and data preparation are complete, you are ready to startcfMIND. ✌️
+Once the installation and data preparation are complete, you are ready to start cfMIND. ✌️
 
 ## 🚀Quick Start
 
@@ -58,12 +57,12 @@ bash cfMIND.sh feature_extraction -i sample.csorted.bam -r hg38.500region3cpgs.b
  Options:
 
 ```bash
--i : Input BAM file (sorted and indexed with .bai)
--r : BED file defining genomic regions of interest
--b : CpG_OB file (methylation calls on the original bottom strand)
--t : CpG_OT file (methylation calls on the original top strand)
--p : Output file prefix (normal samples must start with CTR)
--@ : Number of threads (default: 8)
+-i: Input BAM file (sorted and indexed with .bai)
+-r: BED file defining genomic regions of interest
+-b: CpG_OB file (methylation calls on the original bottom strand)
+-t: CpG_OT file (methylation calls on the original top strand)
+-p: Output file prefix (normal samples must start with CTR)
+-@: Number of threads (default: 8)
 ```
 #### Output
 cfMIND.sh feature_extraction produces `/csvdir/sample.csv`. Example content:
@@ -83,7 +82,7 @@ region: Genomic region ID
 ```
 ###  2. **Disease detection** 
 
-This step uses extracted features to train the model and perform disease detection via **LOO cross-validation**.(这里交叉验证的方式是否要修改)
+This step uses the extracted features to train the model and perform disease detection using **leave-one-out (LOO) cross-validation**.(这里交叉验证的方式是否要修改)
 
 ```bash
 bash cfMIND.sh disease_detection -d /csvdir/ -c 20 -p test -o /modeldir/ -@ 10
@@ -92,11 +91,11 @@ bash cfMIND.sh disease_detection -d /csvdir/ -c 20 -p test -o /modeldir/ -@ 10
  Options:
 
 ```bash
--d : Directory containing feature files (*.csv) from feature extraction
--c : Coverage cutoff threshold for region (e.g., 20)
--p : Run prefix (used for output naming)
--o : Output directory for trained models and prediction results
--@ : Number of threads for parallel LOO cross-validation
+-d: Directory containing feature files (*.csv) from feature extraction
+-c: Coverage cutoff threshold for region (e.g., 20)
+-p: Run prefix (used for output naming)
+-o: Output directory for trained models and prediction results
+-@: Number of threads for parallel LOO cross-validation
 ```
 
 #### Output
@@ -105,8 +104,6 @@ bash cfMIND.sh disease_detection -d /csvdir/ -c 20 -p test -o /modeldir/ -@ 10
 - `*_predict_result.pdf` : ROC curve with evaluation metrics.
 - `*_predict_metrics.txt` : Summary of AUC, accuracy, precision, recall, F1 score, and sensitivity at 90% specificity.
 - `*region_length.txt` : Number of regions retained at each filtering step.
-
-
 
 ✅ With these two simple steps, you can efficiently extract read-level methylation features and perform **sensitive, non-invasive disease detection** using cfDNA.
 
