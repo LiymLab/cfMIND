@@ -1,5 +1,3 @@
-README file for cfMIND
-
 # cfMIND: A read-level methylation framework for accurate non-invasive disease detection using cell-free DNA
 cfMIND  (<em><u>cf</u></em>DNA <em><u>M</u></em>ethylation signals of <em><u>IN</u></em>dividual read for disease <em><u>D</u></em>etection)is a **machine learning-based framework** that enables identification of stratified cfDNA methylation signals at the **individual read level** for sensitive and robust disease detection. 
 
