@@ -82,7 +82,7 @@ region: Genomic region ID
 ```
 ###  2. **Disease detection** 
 
-This step uses the extracted features to train the model and perform disease detection using **leave-one-out (LOO) cross-validation**.(这里交叉验证的方式是否要修改)
+This step uses the extracted features to train the model and perform disease detection using **leave-one-out (LOO) cross-validation**.
 
 ```bash
 bash cfMIND.sh disease_detection -d /csvdir/ -c 20 -p test -o /modeldir/ -@ 10
