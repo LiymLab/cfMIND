@@ -82,8 +82,8 @@ bash cfMIND.sh feature_extraction -i sample.csorted.bam -r hg38 -b CpG_OB_sample
 #### Output
 cfMIND.sh feature_extraction produces `/csvdir/sample.csv`. **Columns:**
 
-- **region** – Genomic region ID
-- **0, 0.25, 0.5, 0.75, 1** – Read counts at each methylation level (0%, 25%, 50%, 75%, 100%)  
+- **region** – Genomic region ID.
+- **0, 0.25, 0.5, 0.75, 1** – Read counts at each methylation level (0%, 25%, 50%, 75%, 100%) .
 
 Example:
 
