@@ -66,7 +66,7 @@ bash cfMIND.sh feature_extraction -i sample.csorted.bam -r hg38 -b CpG_OB_sample
 ```
  Options:
 
-```bash
+```txt
 -i: Input BAM file (sorted and indexed)
 -r: BED file of genomic regions. Options: hg38/hg19, 
              or a custom BED file (4 tab-delimited columns, no header):
@@ -116,7 +116,7 @@ bash cfMIND.sh disease_detection -m /path/to/manifest.txt -c 20 -p test -o /outd
 
  Options:
 
-```bash
+```txt
 -m: Manifest file (tab-delimited) with two columns:
    path – Full path to each .csv file
    group – sample label (e.g., CTR, tumor, or other multi-class tags)
@@ -130,9 +130,9 @@ bash cfMIND.sh disease_detection -m /path/to/manifest.txt -c 20 -p test -o /outd
 
 #### Output
 
-- `<prefix>_XGBoost_predict_probability.txt`: Sample predictions with probabilities.
+- `<prefix>_XGBoost_predict_probability.txt` : Sample predictions with probabilities.
 
-- `<prefix>_XGBoost_predict_metrics.txt`: Summary of evaluation metrics for each repeat.
+- `<prefix>_XGBoost_predict_metrics.txt` : Summary of evaluation metrics for each repeat.
 
   - For **binary classification**: AUC, accuracy, precision, recall, F1 score, and sensitivity at 90% specificity.
   - For **multi-class classification**: accuracy, precision, recall, and F1 score.
