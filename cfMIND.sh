@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # ===== Configuration =====
 script_path="$(readlink -f "$0")"
@@ -11,6 +10,7 @@ RSCRIPT_BIN="$(command -v Rscript)"
 
 # Script paths (located in the same directory as cfMIND.sh)
 SCRIPT_5MLE_DEFAULT="$script_dir/5_methylation_levels_encoding.py"      
+SCRIPT_DATA_PROCESS="$script_dir/feature_matrix.R"
 SCRIPT_MODEL="$script_dir/model_training_and_prediction.R"                
 # Built-in regions location
 BUILTIN_HG38="$script_dir/hg38.500region3cpgs.bed"
@@ -29,50 +29,52 @@ Usage:
 -----------------------------------------------------------------------------------------
  Options for feature_extraction
 -----------------------------------------------------------------------------------------
-  -i <file>   Input BAM file (sorted & indexed)                     (required)
-  -r <file>   BED file of genomic regions. Options: hg38/hg19       (required)
-              or the path to a custom BED file (4 tab-delimited columns, no header):
+  -m <file>   Manifest file (tab-delimited, with header). Must contain columns:
+                - bam    : Input BAM file (sorted & indexed)
+                - cpg_ob : CpG_OB* file (bottom strand) from bismark methylation extractor
+                - cpg_ot : CpG_OT* file (top strand) from bismark methylation extractor
+                - prefix : Output prefix for each sample
+                - label  : Sample label (optional, for disease detection)
+  -r <file>   BED file of genomic regions. Can use 'hg38' or 'hg19' as shortcuts,
+              or provide a custom BED file path (4 tab-delimited columns, no header):
                 <chromosome> <start> <end> <region_id>
                 chr1    10000    10500    region_21
-  -b <file>   CpG_OB* file (bottom strand) from bismark methylation extractor (required)
-  -t <file>   CpG_OT* file (top strand)  from bismark methylation extractor   (required)
-  -p <str>    Output prefix (path + filename prefix, default: sample)
-              If no path is specified, outputs are written to the current directory
+  -c <num>    Coverage cutoff threshold (default: 20)
+  -p <str>    Output prefix for processed data (default: test)
+  -o <dir>    Output directory (default: current working directory)
   -@ <int>    Threads for parallel processing (default: 1)
   --cfTAPS    Use this option for cfTAPS sequencing data
 ----------------------------------------------------------------------------------------
  Options for disease_detection
 ----------------------------------------------------------------------------------------
-  -m <file>   Manifest file (tab-delimited, with header). Must contain columns:
-                - path : .csv file from feature_extraction
-                - group: sample label (e.g., CTR, tumor, or other multi-class tags) (required)
-  -c <num>    Coverage cutoff threshold (default: 20)
+  -d <file>   Feature matrix file from feature_extraction step (e.g., feature_matrix.txt)
+              This file should contain both feature matrix and labels from manifest
   -p <str>    Output prefix (default: test)
   -o <dir>    Output directory for prediction results (default: current working directory)
   -n <int>    Number of repeats for cross-validation (default: 1)
   -k <int>    Number of folds for cross-validation
-              (default: number of samples in manifest file, i.e. Leave-One-Out CV)
+              (default: number of samples in data, i.e. Leave-One-Out CV)
   -@ <int>    Threads for parallel cross-validation (default: 1)
 ========================================================================================
 
 EOF
 }
 
-
 # ------------------------
 # Part 1: feature_extraction
 # ------------------------
 feature_extraction() {
-  local bam="" bed="" ob="" ot="" prefix="sample" threads=1 cfTAPS=false
+  local manifest="" bed_file="" cut_off="20" threads=1 cfTAPS=false
+  local output_prefix="test" out_dir="."
   local script_5mle="$SCRIPT_5MLE_DEFAULT"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -i) bam="$2"; shift 2 ;;
-      -r) bed="$2"; shift 2 ;;
-      -b) ob="$2"; shift 2 ;;
-      -t) ot="$2"; shift 2 ;;
-      -p) prefix="$2"; shift 2 ;;
+      -m) manifest="$2"; shift 2 ;;
+      -r) bed_file="$2"; shift 2 ;;
+      -c) cut_off="$2"; shift 2 ;;
+      -p) output_prefix="$2"; shift 2 ;;
+      -o) out_dir="$2"; shift 2 ;;
       -@) threads="$2"; shift 2 ;;
       --cfTAPS) cfTAPS=true; shift 1 ;;
       -h|--help) usage; exit 0 ;;
@@ -81,63 +83,104 @@ feature_extraction() {
   done
 
   # Required options
-  [[ -n "${bam:-}"    ]] || { echo "ERROR: -i <bam> is required"; exit 2; }
-  [[ -n "${bed:-}"    ]] || { echo "ERROR: -r <bed> is required"; exit 2; }
-  [[ -n "${ob:-}"     ]] || { echo "ERROR: -b <CpG_OB> is required"; exit 2; }
-  [[ -n "${ot:-}"     ]] || { echo "ERROR: -t <CpG_OT> is required"; exit 2; }
-
-  # Resolve built-in shorthand to full path (same directory as script)
-  case "$(basename "$bed")" in
-    "hg38") bed="$BUILTIN_HG38" ;;
-    "hg19") bed="$BUILTIN_HG19" ;;
+  [[ -n "${manifest:-}" ]] || { echo "ERROR: -m <manifest> is required"; exit 2; }
+  [[ -f "$manifest" ]] || { echo "ERROR: Manifest not found: $manifest"; exit 2; }
+  [[ -n "${bed_file:-}" ]] || { echo "ERROR: -r <bed_file> is required"; exit 2; }
+  
+  # Resolve built-in shorthand to full path and validate BED file
+  case "$(basename "$bed_file")" in
+    "hg38") bed_file="$BUILTIN_HG38" ;;
+    "hg19") bed_file="$BUILTIN_HG19" ;;
     *)
-      # custom user path; leave as-is
-      # check format: 4 tab-delimited columns, no header
-      if [[ ! -f "$bed" ]]; then
-        echo "ERROR: BED file not found: $bed"; exit 2
+      # custom user path; check format
+      if [[ ! -f "$bed_file" ]]; then
+        echo "ERROR: BED file not found: $bed_file"; exit 2
       fi
       awk -F'\t' 'NF && NF!=4 {
         print "ERROR: BED file must have exactly 4 TAB-delimited columns."
         print "Expect: <chr> <start> <end> <region_id>"
         print "Example: chr1\t1\t500\tregion_1"
         exit 2
-      }' "$bed" || exit 2
+      }' "$bed_file" || exit 2
     ;;
-esac
-
-  # Validate inputs
-  [[ -f "$bam" ]]                    || { echo "ERROR: BAM file not found: $bam"; exit 2; }
-  [[ -f "${bam}.bai" ]]              || { echo "ERROR: BAM index (.bai) missing for: $bam"; exit 2; }
-  [[ -f "$bed" ]]                    || { echo "ERROR: BED file not found: $bed"; exit 2; }
-  [[ -f "$ob"  ]]                    || { echo "ERROR: CpG_OB file not found: $ob"; exit 2; }
-  [[ -f "$ot"  ]]                    || { echo "ERROR: CpG_OT file not found: $ot"; exit 2; }
-  [[ "$ob" == *CpG_OB* ]]            || { echo "ERROR: -b file must contain 'CpG_OB' in its name"; exit 2; }
-  [[ "$ot" == *CpG_OT* ]]            || { echo "ERROR: -t file must contain 'CpG_OT' in its name"; exit 2; }
-  [[ -x "$PYTHON_BIN" ]]             || { echo "ERROR: python not found in PATH"; exit 127; }
-  [[ -r "$script_5mle" ]]            || { echo "ERROR: Python script not readable: $script_5mle"; exit 1; }
-
-  # Build and run command
-  cmd=("$PYTHON_BIN" "$script_5mle" \
-       -i "$bam" -r "$bed" -b "$ob" -t "$ot" \
-       -p "$prefix" -@ "$threads")
-  if $cfTAPS; then
-    cmd+=(--cfTAPS)
+  esac
+  [[ -f "$bed_file" ]] || { echo "ERROR: BED file not found: $bed_file"; exit 2; }
+  
+  # Check manifest format
+  header="$(head -n 1 "$manifest" | tr -d "\r")"
+  if ! echo "$header" | awk -F'\t' 'BEGIN{IGNORECASE=1}
+    {for(i=1;i<=NF;i++){if($i=="bam")b=1;if($i=="cpg_ob")o=1;if($i=="cpg_ot")t=1;if($i=="prefix")p=1;if($i=="label")l=1}}
+    END{exit !(b&&o&&t&&p&&l)}'
+  then
+    echo "ERROR: Manifest header must contain columns: bam, cpg_ob, cpg_ot, prefix, label"; exit 2
   fi
 
-  echo "Running feature extraction: ${cmd[*]}"
-  "${cmd[@]}"
+  # Validate inputs
+  [[ "$cut_off" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] || { echo "ERROR: -c must be numeric"; exit 2; }
+  [[ -x "$PYTHON_BIN" ]] || { echo "ERROR: python not found in PATH"; exit 127; }
+  [[ -x "$RSCRIPT_BIN" ]] || { echo "ERROR: Rscript not found in PATH"; exit 127; }
+  [[ -r "$script_5mle" ]] || { echo "ERROR: Python script not readable: $script_5mle"; exit 1; }
+  [[ -r "$SCRIPT_DATA_PROCESS" ]] || { echo "ERROR: R script not readable: $SCRIPT_DATA_PROCESS"; exit 1; }
+  
+  # Create output directory if it doesn't exist
+  mkdir -p "$out_dir"
+
+  echo "Processing manifest file: $manifest"
+  echo "BED file: $bed_file"
+  echo "Coverage cutoff threshold: $cut_off"
+  echo "Output prefix: $output_prefix"
+  echo "Output directory: $out_dir"
+  # Process each line in manifest (skip header)
+  sed '1d' "$manifest" | while IFS=$'\t' read -r bam ob ot prefix rest; do
+    # Skip empty lines
+    echo $bam
+    [[ -n "$bam" ]] || continue
+    echo "Processing sample: $prefix"
+    
+    # Validate inputs for this sample
+    [[ -f "$bam" ]] || { echo "ERROR: BAM file not found: $bam"; exit 2; }
+    [[ -f "${bam}.bai" ]] || { echo "ERROR: BAM index (.bai) missing for: $bam"; exit 2; }
+    [[ -f "$ob" ]] || { echo "ERROR: CpG_OB file not found: $ob"; exit 2; }
+    [[ -f "$ot" ]] || { echo "ERROR: CpG_OT file not found: $ot"; exit 2; }
+    [[ "$ob" == *CpG_OB* ]] || { echo "ERROR: CpG_OB file must contain 'CpG_OB' in its name: $ob"; exit 2; }
+    [[ "$ot" == *CpG_OT* ]] || { echo "ERROR: CpG_OT file must contain 'CpG_OT' in its name: $ot"; exit 2; }
+    
+    # Build and run command for this sample
+    cmd=("$PYTHON_BIN" "$script_5mle" \
+         -i "$bam" -r "$bed_file" -b "$ob" -t "$ot" \
+         -p "$out_dir/$prefix" -@ "$threads")
+    if $cfTAPS; then
+      cmd+=(--cfTAPS)
+    fi
+    
+    echo "Running feature extraction for $prefix: ${cmd[*]}"
+    "${cmd[@]}" || { echo "ERROR: Feature extraction failed for $prefix"; exit 1; }
+  done
+  
+  # After all feature extractions are complete, run data processing
+  echo "Feature extraction completed. Running data processing..."
+  
+  # CSV files are now in the output directory
+  csv_dir="$out_dir"
+  
+  echo "Running data processing:"
+  echo "  $RSCRIPT_BIN $SCRIPT_DATA_PROCESS $csv_dir $cut_off $output_prefix $out_dir $manifest"
+
+  "$RSCRIPT_BIN" "$SCRIPT_DATA_PROCESS" \
+    "$csv_dir" "$cut_off" "$output_prefix" "$out_dir" "$manifest" || { echo "ERROR: Data processing failed"; exit 1; }
+    
+  echo "Feature extraction and data processing completed successfully!"
 }
 
 # ------------------------
 # Part 2: disease_detection
 # ------------------------
 disease_detection() {
-  local manifest="" cut_off="20" prefix="test" out_dir="." n_repeat=1 n_fold=0
+  local feature_matrix_file="" prefix="test" out_dir="." n_repeat=1 n_fold=0
   local n_thread="1"    
-  while getopts ":m:c:p:o:n:k:@:h" opt; do
+  while getopts ":d:p:o:n:k:@:h" opt; do
     case "$opt" in
-      m) manifest="$OPTARG" ;;
-      c) cut_off="$OPTARG" ;;
+      d) feature_matrix_file="$OPTARG" ;;
       p) prefix="$OPTARG" ;;
       o) out_dir="$OPTARG" ;;
       n) n_repeat="$OPTARG" ;;
@@ -149,27 +192,19 @@ disease_detection() {
     esac
   done
 
-  [[ -n "$manifest" ]] || { echo "ERROR: -m <manifest> is required"; exit 2; }
-  [[ -f "$manifest" ]] || { echo "ERROR: Manifest not found: $manifest"; exit 2; }
-  # check format
-  header="$(head -n 1 "$manifest" | tr -d "\r")"
-  if ! echo "$header" | awk -F'\t' 'BEGIN{IGNORECASE=1}
-    {for(i=1;i<=NF;i++){if($i=="path")p=1;if($i=="group")g=1}}
-    END{exit !(p&&g)}'
-  then
-    echo "ERROR: Manifest header must contain columns: path, group"; exit 2
-  fi
+  [[ -n "$feature_matrix_file" ]] || { echo "ERROR: -d <feature_matrix_file> is required"; exit 2; }
+  [[ -f "$feature_matrix_file" ]] || { echo "ERROR: Feature matrix file not found: $feature_matrix_file"; exit 2; }
 
+  # If n_fold is not specified, it will be determined from the data in the R script
   if [[ -z "${n_fold:-}" || "$n_fold" -eq 0 ]]; then
-    n_fold="$(tail -n +2 "$manifest" | grep -v '^[[:space:]]*$' | wc -l | tr -d ' ')"
+    n_fold=0  # Let R script determine from data
   fi
 
   # Validate inputs
-  [[ "$cut_off"  =~ ^-?[0-9]+(\.[0-9]+)?$ ]] || { echo "ERROR: -c must be numeric"; exit 2; }
-  [[ "$n_repeat" =~ ^[0-9]+$               ]] || { echo "ERROR: -n must be integer"; exit 2; }
-  [[ "$n_fold"   =~ ^[0-9]+$               ]] || { echo "ERROR: -k must be integer"; exit 2; }
-  [[ "$n_thread" =~ ^[0-9]+$               ]] || { echo "ERROR: -@ must be integer"; exit 2; }
-  [[ "$n_thread" -ge 1                     ]] || { echo "ERROR: -@ must be >= 1"; exit 2; }
+  [[ "$n_repeat" =~ ^[0-9]+$ ]] || { echo "ERROR: -n must be integer"; exit 2; }
+  [[ "$n_fold"   =~ ^[0-9]+$ ]] || { echo "ERROR: -k must be integer"; exit 2; }
+  [[ "$n_thread" =~ ^[0-9]+$ ]] || { echo "ERROR: -@ must be integer"; exit 2; }
+  [[ "$n_thread" -ge 1       ]] || { echo "ERROR: -@ must be >= 1"; exit 2; }
 
   [[ -x "$RSCRIPT_BIN" ]]  || { echo "ERROR: Rscript not found in PATH"; exit 127; }
   [[ -r "$SCRIPT_MODEL" ]] || { echo "ERROR: R script not readable: $SCRIPT_MODEL"; exit 1; }
@@ -180,11 +215,17 @@ disease_detection() {
   export OPENBLAS_NUM_THREADS=1
 
   echo "Running disease detection:"
-  echo "  $RSCRIPT_BIN $SCRIPT_MODEL \\"
-  echo "    $manifest $cut_off $prefix $out_dir $n_repeat $n_fold $n_thread"
+  echo "$RSCRIPT_BIN $SCRIPT_MODEL \\"
+  if [[ "$n_fold" -eq 0 ]]; then
+    # Get sample count from feature matrix file (excluding header)
+    sample_count=$(sed '1d' "$feature_matrix_file" | wc -l)
+    echo "  $feature_matrix_file $prefix $out_dir $n_repeat $sample_count $n_thread"
+  else
+    echo "  $feature_matrix_file $prefix $out_dir $n_repeat $n_fold $n_thread"
+  fi
 
   "$RSCRIPT_BIN" "$SCRIPT_MODEL" \
-    "$manifest" "$cut_off" "$prefix" "$out_dir" "$n_repeat" "$n_fold" "$n_thread"
+    "$feature_matrix_file" "$prefix" "$out_dir" "$n_repeat" "$n_fold" "$n_thread" || { echo "ERROR: Disease detection failed"; exit 1; }
 }
 
 main() {
