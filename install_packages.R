@@ -4,6 +4,9 @@
 # =============================================
 
 # ---- 1. Set CRAN mirror (Tsinghua University) ----
+#Note: For faster package downloads, it is recommended to select a CRAN mirror geographically close to you.
+#This script uses the Tsinghua University mirror in China, which is optimal for users in China. 
+#You may replace it with another mirror from https://cran.r-project.org/mirrors.html if needed.
 options(repos = c(CRAN = "https://mirrors.tuna.tsinghua.edu.cn/CRAN/"))
 cat(">>> Using CRAN mirror:", getOption("repos"), "\n")
 # ---- Clean environment & set Conda compilers ----
@@ -35,7 +38,10 @@ if (length(to_install) > 0) {
 }
 
 # ---- 3. Install archived versions ----
-
+install.packages("https://cran.r-project.org/src/contrib/Archive/Matrix/Matrix_1.6-1.1.tar.gz",
+                 repos = NULL, type = "source")
+install.packages("https://cran.r-project.org/src/contrib/Archive/Rcpp/Rcpp_1.0.11.tar.gz",
+                 repos = NULL, type = "source")
 # Boruta 8.0.0
 if (!requireNamespace("Boruta", quietly = TRUE)) {
   cat(">>> Installing Boruta (v8.0.0) from CRAN archive...\n")
@@ -59,4 +65,4 @@ if (!requireNamespace("xgboost", quietly = TRUE)) {
 } else {
   cat(">>> xgboost is already installed.\n")
 }
-
+cat(">>> DONE. All required packages installed successfully.\n")
