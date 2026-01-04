@@ -75,7 +75,7 @@ The main script **`cfMIND.sh`** supports **two major steps**:
 
 2. **Disease detection** – train and evaluate the model using cross-validation.
 
-To help you verify your environment setup and quickly get started with cfMIND, we provide **example files** on Zenodo: https://doi.org/10.5281/zenodo.18103110.
+To help you verify your environment setup and quickly get started with cfMIND, we provide **example files** on Zenodo: https://doi.org/10.5281/zenodo.18103109.
 You can run cfMIND with:
 
 ```bash
