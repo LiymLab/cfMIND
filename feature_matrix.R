@@ -9,7 +9,7 @@ suppressPackageStartupMessages({
 # ---------------- Arguments ----------------
 args = commandArgs(trailingOnly = TRUE)
 if (length(args) < 5) {
-  stop("Usage: Rscript feature_matrix.R <input_dir> <cut_off> <prefix> <out_dir> <manifest_file>\n", call. = FALSE)
+  stop("Usage: Rscript feature_matrix.R <input_dir> <cut_off> <prefix> <out_dir> <manifest_file> [n_levels]\n", call. = FALSE)
 }
 
 input_dir = args[1]
@@ -17,6 +17,7 @@ cut_off = as.numeric(args[2])
 prefix = args[3]
 out_dir = args[4]
 manifest_file = args[5]
+n_levels = if (length(args) >= 6) as.numeric(args[6]) else 5
 
 # Ensure output directory exists
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
@@ -27,10 +28,16 @@ if (!grepl("/$", input_dir)) input_dir <- paste0(input_dir, "/")
 # Function: data_process
 # Purpose : Process input csv files and build feature matrix
 # =====================================================================
-data_process = function(data_list, data_dir, cut_off, out_dir, prefix){
+data_process = function(data_list, data_dir, cut_off, out_dir, prefix, n_levels){
+  level_labels = sprintf("%g", seq(0, 1, length.out = n_levels))
+  m_cols = paste0("M_", level_labels)
   for (data in data_list){
-    assign(data, drop_na(rename(read.csv(paste0(data_dir, data, ".csv"), header = T, row.names = 1),
-                                M_0 = X0, M_0.25 = X0.25, M_0.5 = X0.5, M_0.75 = X0.75, M_1 = X1)))
+    df = drop_na(read.csv(paste0(data_dir, data, ".csv"), header = T, row.names = 1))
+    if (ncol(df) != n_levels) {
+      stop("CSV file ", data, ".csv has ", ncol(df), " methylation level columns, but -l ", n_levels, " was specified")
+    }
+    colnames(df) = m_cols
+    assign(data, df)
   }
   
   # Get the common regions from all data 
@@ -50,15 +57,10 @@ data_process = function(data_list, data_dir, cut_off, out_dir, prefix){
       file = paste0(out_dir, prefix, "_region_selection.log"), append = TRUE)  
   
   # Get the average data from all data
-  sum_data = data.frame(region = rownames(get(data_list[1])), M_0 = 0, M_0.25 = 0, M_0.5 = 0, M_0.75 = 0, M_1 = 0)
-  rownames(sum_data) = sum_data$region
-  sum_data = sum_data[,-1]
+  sum_data = get(data_list[1])
+  sum_data[] = 0
   for (data in data_list){
-    sum_data$M_0 = sum_data$M_0 + get(data)$M_0
-    sum_data$M_0.25 = sum_data$M_0.25 + get(data)$M_0.25
-    sum_data$M_0.5 = sum_data$M_0.5 + get(data)$M_0.5
-    sum_data$M_0.75 = sum_data$M_0.75 + get(data)$M_0.75
-    sum_data$M_1 = sum_data$M_1 + get(data)$M_1
+    sum_data = sum_data + get(data)
   }
   ave_data = sum_data/length(data_list)
   ave_data$SUM = apply(ave_data, 1, sum)
@@ -85,8 +87,8 @@ data_process = function(data_list, data_dir, cut_off, out_dir, prefix){
   }
   
   # Feature matrix
-  data_2d = as.data.frame(matrix(nrow = length(data_list), ncol = length(regions)*5))
-  turn_2d = function(region){paste0(region, c("_M_0", "_M_0.25", "_M_0.5", "_M_0.75", "_M_1"))}
+  data_2d = as.data.frame(matrix(nrow = length(data_list), ncol = length(regions)*n_levels))
+  turn_2d = function(region){paste0(region, "_M_", level_labels)}
   regions_2d = unlist(lapply(regions, turn_2d))
   rownames(data_2d) = data_list
   colnames(data_2d) = regions_2d
@@ -112,7 +114,7 @@ cat(paste("Processing with coverage cutoff:", cut_off, "\n"))
 
 # Run data processing
 data_2d <- data_process(data_list = data_list, data_dir = input_dir, 
-                       cut_off = cut_off, out_dir = out_dir, prefix = prefix)
+                       cut_off = cut_off, out_dir = out_dir, prefix = prefix, n_levels = n_levels)
 
 # ---------------------- Process Labels from Manifest ----------------------
 # Read manifest file to get labels

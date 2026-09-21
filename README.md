@@ -87,7 +87,7 @@ bash cfMIND.sh disease_detection -d feature_matrix.txt -p test -o /output/dir -n
 
 cfMIND provides a streamlined **two-step workflow** for non-invasive disease detection:
 
-1. **Feature Extraction**: Processes BAM and CpG files to extract read-level methylation features from specified genomic regions, generating a feature matrix with methylation patterns at different levels (0%, 25%, 50%, 75%, 100%).
+1. **Feature Extraction**: Processes BAM and CpG files to extract read-level methylation features from specified genomic regions, generating a feature matrix with methylation patterns at different levels (by default 5 levels: 0%, 25%, 50%, 75%, 100%; configurable via `-l`).
 
 2. **Disease Detection**: Uses the extracted features to train an XGBoost machine learning model with cross-validation, providing prediction probabilities and comprehensive evaluation metrics for disease classification.
 
@@ -112,6 +112,8 @@ bash cfMIND.sh feature_extraction -m manifest.txt -r hg38 -c 20 -p test -o /outp
     Example: <chromosome> <start> <end> <region_id>
              chr1       10000    10500  region_21
 -c: Coverage cutoff threshold (default: 20)
+-w: Window size of genomic regions in bp (default: 500)
+-l: Number of methylation levels (default: 5, corresponding to 0%, 25%, 50%, 75%, 100%)
 -p: Output prefix for processed data (default: test)
 -o: Output directory (default: current working directory)
 -@: Threads for parallel processing (default: 1)
@@ -140,7 +142,7 @@ cfMIND.sh feature_extraction produces CSV files for each sample and then process
 **CSV file columns:**
 
 - **region** – Genomic region ID.
-- **0, 0.25, 0.5, 0.75, 1** – Read counts at each methylation level (0%, 25%, 50%, 75%, 100%) .
+- **0, 0.25, 0.5, 0.75, 1** – Read counts at each methylation level (0%, 25%, 50%, 75%, 100% by default; the number of levels is configurable via `-l`).
 
 Example:
 
@@ -167,7 +169,7 @@ The feature matrix is a tab-delimited file where each row represents a sample an
 **Column naming convention:**
 - Format: `region_<ID>_M_<methylation_level>`
 - `<ID>`: Genomic region identifier (e.g., 1, 2, 3, ...)
-- `<methylation_level>`: Methylation level (0, 0.25, 0.5, 0.75, 1)
+- `<methylation_level>`: Methylation level (0, 0.25, 0.5, 0.75, 1 by default, i.e. `-l 5`)
 
 **Structure:**
 - **First column**: Sample names (matching the `prefix` column in manifest file)

@@ -9,6 +9,7 @@ parser.add_argument("-b","--ob",metavar="",type=str,help = "CpG_OB* file (bottom
 parser.add_argument("-t","--ot",metavar="",type=str,help = "CpG_OT* file (top strand) from bismark methylation extractor")
 parser.add_argument("-@","--threads",metavar="",type=int,help = "number of additional threads to use")
 parser.add_argument("-p","--prefix",metavar="",type=str,help = "the prefix of the output file")
+parser.add_argument("-l","--levels",metavar="",type=int,default=5,help = "number of methylation levels")
 parser.add_argument("--cfTAPS", action="store_true", help="set this flag for cfTAPS sequencing data")
 
 args = parser.parse_args()
@@ -19,7 +20,10 @@ ob_path = args.ob
 ot_path = args.ot
 threads = args.threads
 prefix = args.prefix
+n_levels = args.levels
 is_cfTAPS = args.cfTAPS 
+
+level_values = ['%g' % (i/(n_levels-1)) for i in range(n_levels)]
 
 #check input
 if 'CpG_OB' not in ob_path:
@@ -31,17 +35,7 @@ if 'CpG_OT' not in ot_path:
 
 #ratio assign
 def ratio_assign(meth_ratio):
-	if 0.125 <= meth_ratio < 0.375:	
-		out_str = '0.25'
-	elif 0.375 <= meth_ratio < 0.625:
-		out_str = '0.5'
-	elif 0.625 <= meth_ratio < 0.875:
-		out_str = '0.75'
-	elif 0.875 <= meth_ratio <= 1:
-		out_str = '1'
-	else:
-		out_str = '0'
-	return out_str
+	return level_values[int(meth_ratio*(n_levels-1) + 0.5)]
 
 # Merge and sort Bismark CpG reports (OB/OT), 
 call("sed '1d' -i " + ob_path,shell = True)
@@ -92,7 +86,7 @@ def call_celfeer(line):
 	region = line[3]
 	bam = pysam.AlignmentFile(input_path,'rb')
 	region_dict = {}
-	region_dict[region] = {'0':0,'0.25':0,'0.5':0,'0.75':0,'1':0}
+	region_dict[region] = {lv:0 for lv in level_values}
 	for read in bam.fetch(contig=region_chr,start=region_start,end=region_end):
 		if read.isize > 0:
 			istart = read.reference_start
@@ -113,17 +107,12 @@ if __name__ == '__main__':
 
 #output result file
 with open(prefix + ".csv",'w') as out_file:
-	out_file.write("region,0,0.25,0.5,0.75,1\n")
+	out_file.write("region," + ",".join(level_values) + "\n")
 	for region_dict in region_list:
 		region = list(region_dict.keys())[0]
-		if list(region_dict[region].values()) == [0,0,0,0,0]:
+		if not any(region_dict[region].values()):
 			continue
 		else:
-			v0 = str(list(region_dict[region].values())[0])
-			v25 = str(list(region_dict[region].values())[1])
-			v50 = str(list(region_dict[region].values())[2])
-			v75 = str(list(region_dict[region].values())[3])
-			v100 = str(list(region_dict[region].values())[4])
-			out_file.write(region + "," + v0 + "," + v25 + "," + v50 + "," + v75 + "," + v100 + "\n")
+			out_file.write(region + "," + ",".join(str(region_dict[region][lv]) for lv in level_values) + "\n")
 out_file.close()
 call("rm " + prefix + ".tmp*",shell = True)

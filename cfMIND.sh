@@ -9,7 +9,7 @@ PYTHON_BIN="$(command -v python)"
 RSCRIPT_BIN="$(command -v Rscript)"
 
 # Script paths (located in the same directory as cfMIND.sh)
-SCRIPT_5MLE_DEFAULT="$script_dir/5_methylation_levels_encoding.py"      
+SCRIPT_MLE_DEFAULT="$script_dir/methylation_levels_encoding.py"
 SCRIPT_DATA_PROCESS="$script_dir/feature_matrix.R"
 SCRIPT_MODEL="$script_dir/model_training_and_prediction.R"                
 # Built-in regions location
@@ -40,6 +40,8 @@ Usage:
                 <chromosome> <start> <end> <region_id>
                 chr1    10000    10500    region_21
   -c <num>    Coverage cutoff threshold (default: 20)
+  -w <int>    Window size of genomic regions in bp (default: 500)
+  -l <int>    Number of methylation levels (default: 5)
   -p <str>    Output prefix for processed data (default: test)
   -o <dir>    Output directory (default: current working directory)
   -@ <int>    Threads for parallel processing (default: 1)
@@ -65,14 +67,16 @@ EOF
 # ------------------------
 feature_extraction() {
   local manifest="" bed_file="" cut_off="20" threads=1 cfTAPS=false
-  local output_prefix="test" out_dir="."
-  local script_5mle="$SCRIPT_5MLE_DEFAULT"
+  local output_prefix="test" out_dir="." window_size=500 n_levels=5
+  local script_mle="$SCRIPT_MLE_DEFAULT"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -m) manifest="$2"; shift 2 ;;
       -r) bed_file="$2"; shift 2 ;;
       -c) cut_off="$2"; shift 2 ;;
+      -w) window_size="$2"; shift 2 ;;
+      -l) n_levels="$2"; shift 2 ;;
       -p) output_prefix="$2"; shift 2 ;;
       -o) out_dir="$2"; shift 2 ;;
       -@) threads="$2"; shift 2 ;;
@@ -117,9 +121,12 @@ feature_extraction() {
 
   # Validate inputs
   [[ "$cut_off" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] || { echo "ERROR: -c must be numeric"; exit 2; }
+  [[ "$window_size" =~ ^[0-9]+$ && "$window_size" -ge 1 ]] || { echo "ERROR: -w must be a positive integer"; exit 2; }
+  [[ "$n_levels" =~ ^[0-9]+$ && "$n_levels" -ge 2 ]] || { echo "ERROR: -l must be an integer >= 2"; exit 2; }
+  awk -F'\t' -v w="$window_size" 'NF && ($3-$2)!=w {bad++} END{if (bad > 0) printf "WARNING: %d region(s) in BED file do not match window size (-w %s)\n", bad, w}' "$bed_file"
   [[ -x "$PYTHON_BIN" ]] || { echo "ERROR: python not found in PATH"; exit 127; }
   [[ -x "$RSCRIPT_BIN" ]] || { echo "ERROR: Rscript not found in PATH"; exit 127; }
-  [[ -r "$script_5mle" ]] || { echo "ERROR: Python script not readable: $script_5mle"; exit 1; }
+  [[ -r "$script_mle" ]] || { echo "ERROR: Python script not readable: $script_mle"; exit 1; }
   [[ -r "$SCRIPT_DATA_PROCESS" ]] || { echo "ERROR: R script not readable: $SCRIPT_DATA_PROCESS"; exit 1; }
   
   # Create output directory if it doesn't exist
@@ -128,6 +135,8 @@ feature_extraction() {
   echo "Processing manifest file: $manifest"
   echo "BED file: $bed_file"
   echo "Coverage cutoff threshold: $cut_off"
+  echo "Window size: $window_size"
+  echo "Methylation levels: $n_levels"
   echo "Output prefix: $output_prefix"
   echo "Output directory: $out_dir"
   # Process each line in manifest (skip header)
@@ -146,9 +155,9 @@ feature_extraction() {
     [[ "$ot" == *CpG_OT* ]] || { echo "ERROR: CpG_OT file must contain 'CpG_OT' in its name: $ot"; exit 2; }
     
     # Build and run command for this sample
-    cmd=("$PYTHON_BIN" "$script_5mle" \
+    cmd=("$PYTHON_BIN" "$script_mle" \
          -i "$bam" -r "$bed_file" -b "$ob" -t "$ot" \
-         -p "$out_dir/$prefix" -@ "$threads")
+         -p "$out_dir/$prefix" -@ "$threads" -l "$n_levels")
     if $cfTAPS; then
       cmd+=(--cfTAPS)
     fi
@@ -164,10 +173,10 @@ feature_extraction() {
   csv_dir="$out_dir"
   
   echo "Running data processing:"
-  echo "  $RSCRIPT_BIN $SCRIPT_DATA_PROCESS $csv_dir $cut_off $output_prefix $out_dir $manifest"
+  echo "  $RSCRIPT_BIN $SCRIPT_DATA_PROCESS $csv_dir $cut_off $output_prefix $out_dir $manifest $n_levels"
 
   "$RSCRIPT_BIN" "$SCRIPT_DATA_PROCESS" \
-    "$csv_dir" "$cut_off" "$output_prefix" "$out_dir" "$manifest" || { echo "ERROR: Data processing failed"; exit 1; }
+    "$csv_dir" "$cut_off" "$output_prefix" "$out_dir" "$manifest" "$n_levels" || { echo "ERROR: Data processing failed"; exit 1; }
     
   echo "Feature extraction and data processing completed successfully!"
 }
